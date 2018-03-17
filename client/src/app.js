@@ -19,6 +19,7 @@ import { PersistGate } from 'redux-persist/lib/integration/react';
 import { persistStore, persistCombineReducers } from 'redux-persist';
 import thunk from 'redux-thunk';
 import { setContext } from 'apollo-link-context';
+import { onError } from 'apollo-link-error';
 import _ from 'lodash';
 
 import AppWithNavigationState, {
@@ -74,6 +75,31 @@ const middlewareLink = setContext((req, previousContext) => {
   return previousContext;
 });
 
+// afterware for responses
+const errorLink = onError(({ graphQLErrors, networkError }) => {
+  let shouldLogout = false;
+  if (graphQLErrors) {
+    console.log({ graphQLErrors });
+    graphQLErrors.forEach(({ message, locations, path }) => {
+      console.log({ message, locations, path });
+      if (message === 'Unauthorized') {
+        shouldLogout = true;
+      }
+    });
+
+    if (shouldLogout) {
+      store.dispatch(logout());
+    }
+  }
+  if (networkError) {
+    console.log('[Network error]:');
+    console.log({ networkError });
+    if (networkError.statusCode === 401) {
+      logout();
+    }
+  }
+});
+
 // Create WebSocket client
 export const wsClient = new SubscriptionClient(`ws://${URL}/subscriptions`, {
   reconnect: true,
@@ -96,6 +122,7 @@ const requestLink = ({ queryOrMutationLink, subscriptionLink }) =>
 
 const link = ApolloLink.from([
   reduxLink,
+  errorLink,
   requestLink({
     queryOrMutationLink: middlewareLink.concat(httpLink),
     subscriptionLink: webSocketLink,
